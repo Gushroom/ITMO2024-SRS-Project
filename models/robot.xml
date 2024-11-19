@@ -1,0 +1,44 @@
+<mujoco model="SZLbot">
+	<option gravity="0 0 -9.81" />
+	<worldbody>
+        <light diffuse=".5 .5 .5" pos="0 0 3" dir="0 0 -1"/>
+		<geom type="plane" size="5 5 0.1" rgba=".9 .9 .9 1"/>
+        <!-- base_body -->
+		<body name = "base_body" pos="0 0 0.2" euler='0 90 0'>
+			<joint type="free"/>
+			<geom type="box" size="0.05 0.2 0.5" rgba="0.6 0.9 0.6 0.5"/>
+			<site name="center" pos = "0 0 -0.1" size="0.02" />
+            <!-- Left_link -->
+			<body name="left-tire" pos="0 0.3 -0.5" euler='90 0 0'>
+				<joint name = "left-wheel" type="hinge" axis="0 0 -1"/>
+				<geom type="cylinder" size=".2 0.05" rgba="0 0 0 0.5"/>
+			</body>
+            <!-- Right_link -->
+			<body name="right_link" pos="0 -0.3 -0.5" euler='90 0 0'>
+				<joint name = "right-wheel" type="hinge" axis="0 0 -1"/>
+				<geom type="cylinder" size=".2 0.05" rgba="0 0 0 0.5"/>
+			</body>
+            <!-- Caster_link -->
+            <body name="caster_link" pos="0.05 0 0.3" euler='90 0 0'>
+				<geom type="sphere" size="0.08" rgba="0 0 0 0.5"/>
+			</body>
+            <!-- IMU_link -->
+            <body name="imu_link" pos="0 0 0.02">
+                <geom name="imu_link_geom" type="box" size="0.02 0.02 0.02" pos="0 0 0" rgba="0.0 0.0 0.0 0.5"/>
+                <site name="imu_site" pos="0 0 0" />
+            </body>
+		</body>
+	</worldbody>
+
+    <sensor>
+        <!-- Accelerometer -->
+        <accelerometer name="imu_accelerometer" site="imu_site"/>
+        <!-- Gyro -->
+        <gyro name="imu_gyro" site="imu_site"/>
+    </sensor>
+
+	<actuator>
+		<velocity name="left-velocity-servo" joint="left-wheel" kv="100"/>
+		<velocity name="right-velocity-servo" joint="right-wheel" kv="100"/>
+	</actuator>
+</mujoco>
