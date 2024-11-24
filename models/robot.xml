@@ -1,8 +1,8 @@
 <mujoco model="SZLbot">
 	<option gravity="0 0 -9.81" />
 	<worldbody>
-        <light diffuse=".5 .5 .5" pos="0 0 3" dir="0 0 -1"/>
-		<geom type="plane" size="100 100 0.1" rgba=".9 .9 .9 1"/>
+        <light diffuse=".5 .5 .5" pos="0 0 10" dir="0 0 -1"/>
+		<geom type="plane" size="20 20 0.1" rgba=".9 .9 .9 1"/>
         <!-- base_body -->
 		<body name = "base_body" pos="0 0 0.2" euler='0 90 0'>
 			<joint type="free"/>

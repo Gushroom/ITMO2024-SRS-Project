@@ -1,5 +1,4 @@
 import math
-import numpy as np
 
 class PIDController():
     def __init__(self, model, data, params):
@@ -57,3 +56,42 @@ class PIDController():
             v_l *= scale_factor
 
         return {"left_wheel": v_l, "right_wheel": v_r}
+
+class SlidingModeController:
+    def __init__(self, params):
+        self.params = params
+
+    def compute_controls(self, state, dt):
+        x, y = state["position"]
+        theta = state["orientation"]
+        x_d, y_d = self.params["x_d"], self.params["y_d"]
+        b = self.params["wheelbase"]
+
+        # Compute errors
+        e_x = x_d - x
+        e_y = y_d - y
+        e_pos = math.sqrt(e_x**2 + e_y**2)
+        theta_d = math.atan2(e_y, e_x)
+        e_theta = (theta - theta_d + math.pi) % (2 * math.pi) - math.pi
+        # Sliding surfaces
+        S_pos = e_pos
+        S_theta = e_theta
+
+        # Control laws
+        v = -self.params["k_pos"] * S_pos / (self.params["epsilon"] + abs(S_pos))
+        omega = -self.params["k_theta"] * S_theta / (self.params["epsilon"] + abs(S_theta))
+
+        # Compute wheel velocities
+        v_r = v + (b / 2.0) * omega
+        v_l = v - (b / 2.0) * omega
+
+        # Limit wheel speeds
+        V_MAX = self.params["V_MAX"]
+        max_wheel_speed = max(abs(v_r), abs(v_l))
+        if max_wheel_speed > V_MAX:
+            scale_factor = V_MAX / max_wheel_speed
+            v_r *= scale_factor
+            v_l *= scale_factor
+
+        return {"left_wheel": v_l, "right_wheel": v_r}
+

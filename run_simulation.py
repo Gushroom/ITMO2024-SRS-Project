@@ -5,7 +5,7 @@ import mujoco
 import mujoco.viewer
 import logging
 from estimators import groundtruth_estimator, RK4_estimator
-from controllers import PIDController
+from controllers import PIDController, SlidingModeController
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 
@@ -54,13 +54,22 @@ X_D = 5.0
 Y_D = 5.0
 
 with mujoco.viewer.launch_passive(model, data) as viewer:
-    controller_params = {
-        "x_d": X_D, "y_d": Y_D, 
-        "K_p_pos": 1.0, "K_i_pos": 0.001, "K_d_pos": 0.5,
-        "K_p_theta": 2.5, "K_i_theta": 0.001, "K_d_theta": 0.01,
-        "wheelbase": 0.6, "V_MAX": 5.0
+    # PID_controller_params = {
+    #     "x_d": X_D, "y_d": Y_D, 
+    #     "K_p_pos": 1.0, "K_i_pos": 0.001, "K_d_pos": 0.5,
+    #     "K_p_theta": 2.5, "K_i_theta": 0.001, "K_d_theta": 0.01,
+    #     "wheelbase": 0.6, "V_MAX": 5.0
+    # }
+    # controller = PIDController(model, data, PID_controller_params)
+
+    SMC_controller_params = {
+        "x_d": X_D, "y_d": Y_D,
+        "c_pos": 2.0, "c_theta": 2.0,
+        "k_pos": 5.0, "k_theta": 3.0,
+        "epsilon": 0.01, "wheelbase": 0.6, "V_MAX": 5.0
     }
-    controller = PIDController(model, data, controller_params)
+
+    controller = SlidingModeController(SMC_controller_params)   
     start_time = time.time()
     last_log_time = -np.inf
     while viewer.is_running():
