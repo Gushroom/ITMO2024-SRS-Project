@@ -22,7 +22,7 @@ class PIDController():
         e_pos = math.sqrt(e_x**2 + e_y**2)
         # Desired theta is found by error in position
         theta_d = math.atan2(e_y, e_x)
-        e_theta = (theta_d - theta + math.pi) % (2 * math.pi) - math.pi
+        e_theta = (theta - theta_d + math.pi) % (2 * math.pi) - math.pi
 
         # Update integral and derivative terms
         self.integral_e_pos += e_pos * dt

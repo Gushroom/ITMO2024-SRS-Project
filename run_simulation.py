@@ -49,10 +49,14 @@ def get_state_from_simulation(data):
     theta = get_yaw_from_quaternion(quat)
     return {"position": (x, y), "orientation": theta}
 
+# Desired position
+X_D = 5.0
+Y_D = 5.0
+
 with mujoco.viewer.launch_passive(model, data) as viewer:
     controller_params = {
-        "x_d": 3.0, "y_d": 3.0, 
-        "K_p_pos": 2.5, "K_i_pos": 0.001, "K_d_pos": 0.5,
+        "x_d": X_D, "y_d": Y_D, 
+        "K_p_pos": 1.0, "K_i_pos": 0.001, "K_d_pos": 0.5,
         "K_p_theta": 2.5, "K_i_theta": 0.001, "K_d_theta": 0.01,
         "wheelbase": 0.6, "V_MAX": 5.0
     }
@@ -73,7 +77,16 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
         current_time = time.time() - start_time
         # Log every second
         if current_time - last_log_time >= 1.0:
-            logging.info(f"Time: {current_time:.2f}, {state}")
+            pos_x = state['position'][0]
+            pos_y = state['position'][1]
+            err_x = X_D - pos_x
+            err_y = Y_D - pos_y
+            theta_d = math.atan2(err_y, err_x)
+            ctrl_l = controls["left_wheel"]
+            ctrl_r = controls["right_wheel"]
+            logging.info(f"Time: {current_time:.2f}, " \
+                         f"Position: ({pos_x:.2f}, {pos_y:.2f}), " \
+                         f"Controls: Left: {ctrl_l:.2f}, Right: {ctrl_r:.2f}")
             last_log_time = current_time
 
         # Step simulation
