@@ -6,23 +6,23 @@
         <!-- base_body -->
 		<body name = "base_body" pos="0 0 0.2" euler='0 0 0'>
 			<joint type="free"/>
-			<geom type="box" size="0.5 0.2 0.05" rgba="0.6 0.9 0.6 0.5"/>
+			<geom type="box" size="0.05 0.2 0.5" rgba="0.6 0.9 0.6 0.5"/>
 			<inertial mass="10" fullinertia="1.166 0.9167 0.4167 0 0 0" pos="0 0 0" />
-			<site name="center" pos = "0 0 0" size="0.02" />
+			<site name="center" pos = "0 0 -0.1" size="0.02" />
             <!-- Left_link -->
-			<body name="left_link" pos="-0.2 0.3 0" euler='90 0 0'>
+			<body name="left_link" pos="0 0.25 -0.5" euler='90 0 0'>
 				<joint name = "left_wheel" type="hinge" axis="0 0 -1" damping="0.0005"/>
 				<geom type="cylinder" size=".2 0.05" rgba="0 0 0 1"/>
 				<inertial mass="2" fullinertia="0.02167 0.02167 0.04 0 0 0" pos="0 0 0" />
 			</body>
             <!-- Right_link -->
-			<body name="right_link" pos="-0.2 -0.3 0" euler='90 0 0'>
+			<body name="right_link" pos="0 -0.25 -0.5" euler='90 0 0'>
 				<joint name = "right_wheel" type="hinge" axis="0 0 -1" damping="0.0005" />
 				<geom type="cylinder" size=".2 0.05" rgba="0 0 0 1"/>
 				<inertial mass="2" fullinertia="0.02167 0.02167 0.04 0 0 0" pos="0 0 0" />
 			</body>
             <!-- Caster_link -->
-            <body name="caster_link" pos="0.3 0 -0.1" euler='0 0 0'>
+            <body name="caster_link" pos="0.1 0 0.3" euler='90 0 0'>
 				<geom type="sphere"  size="0.1" rgba="0 0 0 1"/>
 				<inertial mass="2" fullinertia="0.008 0.008 0.008 0 0 0" pos="0 0 0" />
 			</body>
@@ -41,10 +41,11 @@
         <gyro name="imu_gyro" site="imu_site"/>
     </sensor>
 
-	<!-- <actuator>
+	<!--actuator>
 		<motor name="left_velocity_servo" joint="left_wheel" ctrlrange="-5 30" ctrllimited="true"/>
 		<motor name="right_velocity_servo" joint="right_wheel"  ctrlrange="-5 30" ctrllimited="true"/>
-	</actuator> -->
+	</actuator-->
+
 	<actuator>
 		<velocity name="left_velocity_servo" joint="left_wheel" kv="10" ctrlrange="-5 5"/>
 		<velocity name="right_velocity_servo" joint="right_wheel" kv="10" ctrlrange="-5 5"/>
