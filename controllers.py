@@ -1,4 +1,5 @@
 import math
+import numpy as np
 import logging
 
 class PIDController():
@@ -13,130 +14,95 @@ class PIDController():
 
     def compute_controls(self, state, dt):
         x, y = state["position"]
-        theta = state["orientation"]
+        theta = state["orientation"]  # Current orientation in radians
         x_d, y_d = self.params["x_d"], self.params["y_d"]
+        K_p_theta = self.params["K_p_theta"]
+        K_p_pos = self.params["K_p_pos"]
+        V_MAX = self.params["V_MAX"]  # Maximum velocity
 
-        def uniToDiff(self, v, w):
-            vR = (2*v + w*self.L)/(2*self.R)
-            vL = (2*v - w*self.L)/(2*self.R)
-            return vR, vL
-        
-        def diffToUni(self, vR, vL):
-            v = self.R/2*(vR+vL)
-            w = self.R/self.L*(vR-vL)
-            return v, w
+        def angleSubtraction(angle_a, angle_b):
+            diff = angle_a - angle_b
+            diff = (diff + np.pi) % (2 * np.pi) - np.pi
+            return diff
 
-        # Compute errors
-        e_x = x_d - x
-        e_y = y_d - y
-        g_theta = math.atan2(e_y, e_x)
-        alpha = -(g_theta - theta)
-        e = math.atan2(math.sin(alpha), math.cos(alpha))
+        # Compute desired heading and position error
+        theta = (theta + np.pi) % (2 * np.pi) - np.pi
+        theta_d = np.atan2(y_d - y, x_d - x)
+        theta_d = (theta_d + np.pi) % (2 * np.pi) - np.pi
+        error_theta = angleSubtraction(theta_d, theta)
+        error_pos = np.hypot(y_d - y, x_d - x)
 
-        e_P = e
-        # e_I = self.integral_e_theta + e
-        # e_D = e - self.e_theta_prev
+        # Compute control efforts
+        w = K_p_theta * error_theta
+        v = K_p_pos * error_pos
 
-        K_p_theta = self.params["K_p_theta"] 
-        
-        w = K_p_theta * e_P
-
-        w = math.atan2(math.sin(w), math.cos(w))
-
-        self.e_theta_prev = e 
-
-        v = 0
+        # Scale linear velocity based on angular error
+        v *= max(0, np.cos(error_theta))  # Reduce v as error_theta increases
 
         # Compute wheel velocities
-        # b = self.params["wheelbase"]
+        v_l = v - w
+        v_r = v + w
 
-        # def fixAngle(self, angle):
-        #     return math.atan2(math.sin(angle), math.cos(angle))
-        
-        # def makeAction(self, v, w):
-        #     x_dt = v*math.cos(theta)
+        # Scale wheel velocities to maximum allowed speed
+        max_wheel_speed = max(abs(v_l), abs(v_r))
+        scale_factor = V_MAX / max_wheel_speed
+        v_l *= scale_factor
+        v_r *= scale_factor
 
+        # Stop when we get close enough
+        if error_pos < 0.25:
+            v_l, v_r, = 0, 0
 
+        return {"left_wheel": v_l, "right_wheel": v_r}
 
-        # # Limit wheel speeds
-        # V_MAX = self.params["V_MAX"]
-        # max_wheel_speed = max(abs(v_r), abs(v_l))
-        # if max_wheel_speed > V_MAX:
-        #     scale_factor = V_MAX / max_wheel_speed
-        #     v_r *= scale_factor
-        #     v_l *= scale_factor
-
-        # return {"left_wheel": v_l, "right_wheel": v_r}
-
-        b = self.params["wheelbase"]
-
-        vR = (2*v + w*b)/(2*0.2)
-        vL = (2*v - w*b)/(2*0.2)
-        return {"left_wheel": vL, "right_wheel": vR}
-    
 
 class ScheduledPIDController:
     def __init__(self, model, data, params):
         self.model = model
         self.data = data
         self.params = params
-        self.e_pos_prev = 0.0
-        self.e_theta_prev = 0.0
-        self.integral_e_pos = 0.0
-        self.integral_e_theta = 0.0
 
     def compute_controls(self, state, dt):
         x, y = state["position"]
         theta = state["orientation"]  # Current orientation in radians
         x_d, y_d = self.params["x_d"], self.params["y_d"]
-
-        # Transform target to robot's local frame
-        e_x = x_d - x
-        e_y = y_d - y
-        x_local = math.cos(theta) * e_x + math.sin(theta) * e_y
-        y_local = -math.sin(theta) * e_x + math.cos(theta) * e_y
-
-        # Compute desired heading in local frame
-        theta_d = math.atan2(y_local, x_local)  # Heading error in local frame
-
-        # Compute position error (distance to target)
-        e_pos = math.sqrt(x_local**2 + y_local**2)
-        # Compute heading error
-        e_theta = theta_d - theta
-
-        # Log for debugging
-        logging.info(f"Position: ({x:.2f}, {y:.2f}), "
-                    f"Orientation: {math.degrees(theta):.2f}°, "
-                    f"Local Target: ({x_local:.2f}, {y_local:.2f}), "
-                    f"Heading Error: {math.degrees(theta_d):.2f}°")
-
-
-        K_p_theta = self.params["K_p_theta"] 
-
-        K_p_pos = self.params["K_p_pos"]
-
         b = self.params["wheelbase"]
-        # heading_error_threshold = math.radians(10)
-        # moving_error_threshold = math.radians(30)
-        # if abs(e_theta) > heading_error_threshold:
-        #     # correct heading first
-        #     K_p_pos = 0
-        #      # Enable turning
+        K_p_theta = self.params["K_p_theta"]
+
+        # Compute position error components
+        delta_x = x_d - x
+        delta_y = y_d - y
+
+        # Compute desired heading
+        theta_d = math.atan2(delta_y, delta_x)
+        # Compute heading error relative to robot's orientation
+        error_theta = theta - theta_d
+        # Ensure wrapping to [-pi, pi]
+        error_theta = (error_theta + math.pi) % (2 * math.pi) - math.pi
+
+        # Compute Euclidean distance to target (position error)
+        error_pos = math.hypot(delta_x, delta_y)
+
+        # # Determine whether to move or turn in place
+        # if abs(error_theta) > math.radians(90):  # If heading error > 90 degrees
+        #     v = 0  # Stop linear motion
+        #     w = K_p_theta * error_theta  # Rotate in place
         # else:
-        #     K_p_theta = 0
-        #       # Enable moving forward
+        #     v = 2  # Set constant linear velocity
+        #     w = K_p_theta * error_theta  # Calculate angular velocity
+
+        # # Saturate linear velocity (v) and angular velocity (w)
+        # v = max(-1, min(1, v))  
 
 
-        # Compute control signals
-        v = -(K_p_pos * e_pos) # Linear velocity
-        omega = K_p_theta * theta_d  # Angular velocity
+        v = 10  # Set constant linear velocity
+        w = K_p_theta * error_theta  # Calculate angular velocity
 
         # Compute wheel velocities
-        b = self.params["wheelbase"]
-        v_r = ((2 * v + omega * b) / (2 * 0.2)) / 0.2
-        v_l = ((2 * v - omega * b) / (2 * 0.2)) / 0.2
+        v_r = v + w
+        v_l = v - w
 
-        # Limit wheel speeds
+        # Scale wheel velocities to maximum allowed speed
         V_MAX = self.params["V_MAX"]
         max_wheel_speed = max(abs(v_r), abs(v_l))
         if max_wheel_speed > V_MAX:
@@ -144,7 +110,13 @@ class ScheduledPIDController:
             v_r *= scale_factor
             v_l *= scale_factor
 
+        # Stop motion if position error is below threshold
+        if error_pos < 1:  # Stop if close to target
+            v_r, v_l = 0, 0
+
         return {"left_wheel": v_l, "right_wheel": v_r}
+
+
 
 
 

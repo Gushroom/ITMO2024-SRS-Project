@@ -52,7 +52,7 @@ def get_state_from_simulation(data):
 
 # Desired position
 X_D = -5
-Y_D = -5
+Y_D = -10
 
 with mujoco.viewer.launch_passive(model, data) as viewer:
     PID_controller_params = {
@@ -65,8 +65,8 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
 
     # scheduled_PID_params = {
     #     "x_d": X_D, "y_d": Y_D, 
-    #     "K_p_pos": 10, "K_i_pos": 0.0001, "K_d_pos": 0.3,
-    #     "K_p_theta": 10, "K_i_theta": 0.0001, "K_d_theta": 0.2,
+    #     "K_p_pos": 1.0, "K_i_pos": 0.0001, "K_d_pos": 0.3,
+    #     "K_p_theta": 10.0, "K_i_theta": 0.0001, "K_d_theta": 0.2,
     #     "wheelbase": 0.6, "V_MAX": 5.0
     # }
     # controller = ScheduledPIDController(model, data, scheduled_PID_params)
