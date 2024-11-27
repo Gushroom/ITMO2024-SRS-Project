@@ -11,7 +11,8 @@ import matplotlib.pyplot as plt
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 
 # Load the MuJoCo model
-model_path = 'models/robot.xml' 
+# model_path = 'models/robot.xml' 
+model_path = 'test_robot.xml' 
 model = mujoco.MjModel.from_xml_path(model_path)
 data = mujoco.MjData(model)
 
@@ -52,7 +53,7 @@ def get_state_from_simulation(data):
 
 # Desired position
 X_D = -5
-Y_D = -10
+Y_D = -3
 
 with mujoco.viewer.launch_passive(model, data) as viewer:
     PID_controller_params = {

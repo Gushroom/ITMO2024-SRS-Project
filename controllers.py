@@ -50,7 +50,7 @@ class PIDController():
         v_r *= scale_factor
 
         # Stop when we get close enough
-        if error_pos < 0.25:
+        if error_pos < 0.01:
             v_l, v_r, = 0, 0
 
         return {"left_wheel": v_l, "right_wheel": v_r}
