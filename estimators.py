@@ -94,3 +94,98 @@ def rotate_vector(vector, quat):
     vector_quat = np.array([0.0] + vector.tolist())
     rotated = quaternion_multiply(quaternion_multiply(quat, vector_quat), quat_conj)
     return rotated[1:]  # Return the vector part
+
+
+
+class KalmanFilter:
+    def __init__(self):
+        # Initialize filter matrices
+        self.P = np.eye(5)  # State covariance matrix (identity as placeholder)
+        self.Q = np.eye(5)  # Process noise covariance (identity as placeholder)
+        self.R = np.eye(5)  # Measurement noise covariance (identity as placeholder)
+        self.state = np.zeros(5)  # Initial state [x, y, theta, v, w]
+
+    def set_noise_matrices(self, Q, R):
+        """Set custom noise matrices."""
+        self.Q = Q
+        self.R = R
+
+    def predict(self, tau_r, tau_l, dt, r, b):
+        """
+        Predict the next state based on control inputs and system dynamics.
+
+        @params:
+            tau_r: float, right motor torque
+            tau_l: float, left motor torque
+            dt: float, time step
+            r: float, wheel radius
+            b: float, wheel base
+        """
+        # Control matrix
+        G = np.array([
+            [r / 2, r / 2],  # Linear velocity
+            [r / b, -r / b]  # Angular velocity
+        ])
+        tau = np.array([tau_r, tau_l]).reshape(-1, 1)
+
+        # Current state
+        x, y, theta, v, w = self.state
+
+        # Predict velocities
+        delta_vw = G @ tau * dt
+        v_new = v + delta_vw[0, 0]
+        w_new = w + delta_vw[1, 0]
+
+        # Predict positions
+        x_new = x + v_new * np.cos(theta) * dt
+        y_new = y + v_new * np.sin(theta) * dt
+        theta_new = theta + w_new * dt
+
+        # Update state
+        self.state = np.array([x_new, y_new, theta_new, v_new, w_new])
+
+        # Update covariance
+        F = np.eye(5)  # State transition matrix (simplified for linear approximation)
+        self.P = F @ self.P @ F.T + self.Q
+
+    def update(self, gyro, acc, dt):
+        """
+        Update the state based on measurements from IMU (gyro and acc).
+
+        @params:
+            gyro: list[3], IMU gyroscope data [wx, wy, wz]
+            acc: list[3], IMU accelerometer data [ax, ay, az]
+            dt: float, time step
+        """
+        # Estimate v and w from IMU
+        estimated_v = self.state[3] + acc[0] * dt  # Integrate acceleration
+        estimated_w = gyro[2]  # Gyroscope z-axis gives angular velocity
+
+        # Measurement vector
+        z = np.zeros(5)
+        z[3] = estimated_v
+        z[4] = estimated_w
+
+        # Measurement model (only v and w are observed)
+        H = np.zeros((5, 5))
+        H[3, 3] = 1  # Map linear velocity (v)
+        H[4, 4] = 1  # Map angular velocity (w)
+
+        # Kalman gain
+        S = H @ self.P @ H.T + self.R
+        K = self.P @ H.T @ np.linalg.inv(S)
+
+        # Update state
+        y = z - H @ self.state  # Innovation
+        self.state += K @ y
+
+        # Update covariance
+        I = np.eye(5)
+        self.P = (I - K @ H) @ self.P
+
+    def get_state(self):
+        """Return the current state."""
+        return self.state
+
+
+        

@@ -4,7 +4,7 @@ import numpy as np
 import mujoco
 import mujoco.viewer
 import logging
-from estimators import groundtruth_estimator, RK4_estimator
+from estimators import groundtruth_estimator, RK4_estimator, KalmanFilter
 from controllers import VelocityPID, AccelerationPID, VelocitySlidingMode
 import matplotlib.pyplot as plt
 
@@ -42,16 +42,29 @@ def get_yaw_from_quaternion(quat):
 # Initialize for visualization
 traj_x, traj_y, traj_theta, v_linear, v_angular = [], [], [], [], []
 
-# Initialize states for estimator
-position = np.array([0.0, 0.0, 0.0])  # [x, y, z]
-velocity = np.array([0.0, 0.0, 0.0])  # [vx, vy, vz]
-quat = np.array([1.0, 0.0, 0.0, 0.0])  # Orientation quaternion [w, x, y, z]
-
 
 def get_state_from_simulation(data):
     x, y, quat = groundtruth_estimator(data)
     theta = get_yaw_from_quaternion(quat)
     return {"position": (x, y), "orientation": theta}
+
+def get_state_from_estimator(tau_r, tau_l, gyro, acc):
+    dt = 0.1
+    r = 0.2
+    b = 0.6
+    kf = KalmanFilter()
+    Q = np.eye(5) * 0.1 
+    R = np.eye(5) * 0.01  
+    kf.set_noise_matrices(Q, R)
+    # Predict
+    kf.predict(tau_r, tau_l, dt, r, b)
+
+    # Update
+    kf.update(gyro, acc, dt)
+
+    # Get updated state
+    print("Updated State:", kf.get_state())
+
 
 # Desired position
 target_positions = [(3, 3), (3, -3), (-3, -3), (-3, 3), (0, 0)]
@@ -112,6 +125,12 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
                 qvel_start_index = model.body_dofadr[body_id]
                 linear_velocity = data.qvel[qvel_start_index : qvel_start_index + 3]
                 angular_velocity = data.qvel[qvel_start_index + 3:qvel_start_index +  6]
+                accel_data = data.sensordata[imu_acc_sensor_adr:imu_acc_sensor_adr + 3]  
+                gyro_data = data.sensordata[imu_gyro_sensor_adr:imu_gyro_sensor_adr + 3]
+                v_linear.append(linear_velocity)
+                v_angular.append(angular_velocity)
+                traj_x.append(pos_x)
+                traj_y.append(pos_y)
                 actural_velocity = (linear_velocity, angular_velocity)
                 torque_controls = acc_controller.compute_controls(desired_velocity, actural_velocity, control_update_interval)
                 # Apply controls to actuators
@@ -119,6 +138,10 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
                 # data.ctrl[right_actuator_id] = controls["right_wheel"]
                 data.ctrl[left_actuator_id] = torque_controls["tau_left"]
                 data.ctrl[right_actuator_id] = torque_controls["tau_right"]
+
+                get_state_from_estimator(torque_controls["tau_right"],
+                                         torque_controls["tau_left"],
+                                         gyro_data, accel_data)
                 last_ctrl_time = current_time
 
             # Log every second
@@ -146,3 +169,14 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
         elapsed_time = time.time() - start_time
         if elapsed_time < data.time:
             time.sleep(data.time - elapsed_time)
+
+
+plt.figure()
+plt.plot(traj_x, traj_y, label="Trajectory", marker="o")  # Line with markers
+plt.title("Robot Trajectory")
+plt.xlabel("X Position (m)")
+plt.ylabel("Y Position (m)")
+plt.legend()
+plt.grid(True)
+plt.axis("equal")  # Equal scaling for x and y axes
+plt.show()
