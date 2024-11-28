@@ -1,21 +1,17 @@
-import math
 import numpy as np
 import logging
 
-class PIDController():
-    def __init__(self, model, data, params):
-        self.model = model
-        self.data = data
+class VelocityPID():
+    def __init__(self, params):
         self.params = params
         self.e_pos_prev = 0.0
         self.e_theta_prev = 0.0
         self.integral_e_pos = 0.0
         self.integral_e_theta = 0.0
 
-    def compute_controls(self, state, dt):
+    def compute_controls(self, state, x_d, y_d, dt):
         x, y = state["position"]
         theta = state["orientation"]  # Current orientation in radians
-        x_d, y_d = self.params["x_d"], self.params["y_d"]
         K_p_theta = self.params["K_p_theta"]
         K_p_pos = self.params["K_p_pos"]
         V_MAX = self.params["V_MAX"]  # Maximum velocity
@@ -32,12 +28,12 @@ class PIDController():
         error_theta = angleSubtraction(theta_d, theta)
         error_pos = np.hypot(y_d - y, x_d - x)
 
+        # Scale linear velocity based on angular error
+        K_p_pos *= max(0, np.cos(error_theta))  # Reduce linear gain as error_theta increases
+
         # Compute control efforts
         w = K_p_theta * error_theta
         v = K_p_pos * error_pos
-
-        # Scale linear velocity based on angular error
-        v *= max(0, np.cos(error_theta))  # Reduce v as error_theta increases
 
         # Compute wheel velocities
         v_l = v - w
@@ -50,111 +46,66 @@ class PIDController():
         v_r *= scale_factor
 
         # Stop when we get close enough
-        if error_pos < 0.01:
+        if error_pos < 0.1:
             v_l, v_r, = 0, 0
 
         return {"left_wheel": v_l, "right_wheel": v_r}
-
-
-class ScheduledPIDController:
-    def __init__(self, model, data, params):
-        self.model = model
-        self.data = data
-        self.params = params
-
-    def compute_controls(self, state, dt):
-        x, y = state["position"]
-        theta = state["orientation"]  # Current orientation in radians
-        x_d, y_d = self.params["x_d"], self.params["y_d"]
-        b = self.params["wheelbase"]
-        K_p_theta = self.params["K_p_theta"]
-
-        # Compute position error components
-        delta_x = x_d - x
-        delta_y = y_d - y
-
-        # Compute desired heading
-        theta_d = math.atan2(delta_y, delta_x)
-        # Compute heading error relative to robot's orientation
-        error_theta = theta - theta_d
-        # Ensure wrapping to [-pi, pi]
-        error_theta = (error_theta + math.pi) % (2 * math.pi) - math.pi
-
-        # Compute Euclidean distance to target (position error)
-        error_pos = math.hypot(delta_x, delta_y)
-
-        # # Determine whether to move or turn in place
-        # if abs(error_theta) > math.radians(90):  # If heading error > 90 degrees
-        #     v = 0  # Stop linear motion
-        #     w = K_p_theta * error_theta  # Rotate in place
-        # else:
-        #     v = 2  # Set constant linear velocity
-        #     w = K_p_theta * error_theta  # Calculate angular velocity
-
-        # # Saturate linear velocity (v) and angular velocity (w)
-        # v = max(-1, min(1, v))  
-
-
-        v = 10  # Set constant linear velocity
-        w = K_p_theta * error_theta  # Calculate angular velocity
-
-        # Compute wheel velocities
-        v_r = v + w
-        v_l = v - w
-
-        # Scale wheel velocities to maximum allowed speed
-        V_MAX = self.params["V_MAX"]
-        max_wheel_speed = max(abs(v_r), abs(v_l))
-        if max_wheel_speed > V_MAX:
-            scale_factor = V_MAX / max_wheel_speed
-            v_r *= scale_factor
-            v_l *= scale_factor
-
-        # Stop motion if position error is below threshold
-        if error_pos < 1:  # Stop if close to target
-            v_r, v_l = 0, 0
-
-        return {"left_wheel": v_l, "right_wheel": v_r}
-
-
-
-
-
-class SlidingModeController:
+    
+class AccelerationPID():
     def __init__(self, params):
         self.params = params
+        self.prev_vl = 0
+        self.prev_vr = 0
+        self.err_vl_prev = 0
+        self.err_vr_prev = 0
+        self.integral_err_vl = 0
+        self.integral_err_vr = 0
 
-    def compute_controls(self, state, dt):
-        x, y = state["position"]
-        theta = state["orientation"]
-        x_d, y_d = self.params["x_d"], self.params["y_d"]
-        b = self.params["wheelbase"]
+    def compute_controls(self, desired_velocity, actural_velocity, dt):
+        K_p = self.params["K_p"]
+        K_i = self.params["K_i"]
+        K_d = self.params["K_d"]
+        T_MAX = self.params["T_MAX"]  # max control limit (30)
+        T_MIN = self.params["T_MIN"]  # min control limit (-30)
+        base = self.params["wheelbase"]
 
-        # Compute errors
-        e_x = x_d - x
-        e_y = y_d - y
-        e_pos = math.sqrt(e_x**2 + e_y**2)
-        theta_d = math.atan2(e_y, e_x)
-        e_theta = (theta - theta_d + math.pi) % (2 * math.pi) - math.pi
-        # Sliding surfaces
-        S_pos = e_pos
-        S_theta = e_theta
+        # Unpack velocities and calculate actural v_l and v_r using v, w, base
+        actural_linear = actural_velocity[0][0]
+        actural_angular = actural_velocity[1][0]
+        actural_vl = actural_linear - (base/2.0) * actural_angular
+        actural_vr = actural_linear + (base/2.0) * actural_angular
 
-        # Control laws
-        v = -self.params["k_pos"] * S_pos / (self.params["epsilon"] + abs(S_pos))
-        omega = -self.params["k_theta"] * S_theta / (self.params["epsilon"] + abs(S_theta))
+        desired_vl = desired_velocity[0]
+        desired_vr = desired_velocity[1]
 
-        # Compute wheel velocities
-        v_r = v + (b / 2.0) * omega
-        v_l = v - (b / 2.0) * omega
+        # Compute errors between desired and current velocities
+        err_left = desired_vl - actural_vl
+        err_right = desired_vr - actural_vr
+        # Update integral of errors
+        self.integral_err_vl += err_left * dt
+        self.integral_err_vr += err_right * dt
 
-        # # Limit wheel speeds
-        # V_MAX = self.params["V_MAX"]
-        # max_wheel_speed = max(abs(v_r), abs(v_l))
-        # if max_wheel_speed > V_MAX:
-        #     scale_factor = V_MAX / max_wheel_speed
-        #     v_r *= scale_factor
-        #     v_l *= scale_factor
+        # Compute derivative of errors
+        derivative_err_vl = (err_left - self.err_vl_prev) / dt
+        derivative_err_vr = (err_right - self.err_vr_prev) / dt
 
-        return {"left_wheel": v_l, "right_wheel": v_r}
+        # PID control laws for left and right wheel torques
+        tau_l = K_p * err_left + K_i * self.integral_err_vl + K_d * derivative_err_vl
+        tau_r = K_p * err_right + K_i * self.integral_err_vr + K_d * derivative_err_vr
+
+        # Clamp the torques to within the allowed limits
+        tau_l = max(T_MIN, min(T_MAX, tau_l))
+        tau_r = max(T_MIN, min(T_MAX, tau_r))
+
+        # Update previous errors for the next iteration
+        self.err_vl_prev = err_left
+        self.err_vr_prev = err_right
+
+        # Return left and right wheel motor torques
+        return {"tau_left": tau_l, "tau_right": tau_r}
+
+
+
+
+
 

@@ -5,7 +5,7 @@ import mujoco
 import mujoco.viewer
 import logging
 from estimators import groundtruth_estimator, RK4_estimator
-from controllers import PIDController, ScheduledPIDController, SlidingModeController
+from controllers import VelocityPID, AccelerationPID
 import matplotlib.pyplot as plt
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -24,6 +24,8 @@ imu_gyro_sensor_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SENSOR, "imu_g
 imu_acc_sensor_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SENSOR, "imu_accelerometer")
 imu_gyro_sensor_adr = model.sensor_adr[imu_gyro_sensor_id]
 imu_acc_sensor_adr = model.sensor_adr[imu_acc_sensor_id]
+
+body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, 'base_body')
 
 
 # Initialize control inputs
@@ -52,34 +54,22 @@ def get_state_from_simulation(data):
     return {"position": (x, y), "orientation": theta}
 
 # Desired position
-X_D = -5
-Y_D = -3
+target_positions = [(5, 5), (5, -5), (-5, -5), (-5, 5), (0, 0)]
+current_target = 0
 
 with mujoco.viewer.launch_passive(model, data) as viewer:
-    PID_controller_params = {
-        "x_d": X_D, "y_d": Y_D, 
+    vel_controller_params = {
         "K_p_pos": 1.0, "K_i_pos": 0.0001, "K_d_pos": 0.3,
-        "K_p_theta": 1.0, "K_i_theta": 0.0001, "K_d_theta": 0.2,
-        "wheelbase": 0.6, "V_MAX": 5.0
+        "K_p_theta": 1.0, "K_i_theta": 0.0001, "K_d_theta": 0.3,
+        "V_MAX": 5.0
     }
-    controller = PIDController(model, data, PID_controller_params)
+    vel_controller = VelocityPID(vel_controller_params)
 
-    # scheduled_PID_params = {
-    #     "x_d": X_D, "y_d": Y_D, 
-    #     "K_p_pos": 1.0, "K_i_pos": 0.0001, "K_d_pos": 0.3,
-    #     "K_p_theta": 10.0, "K_i_theta": 0.0001, "K_d_theta": 0.2,
-    #     "wheelbase": 0.6, "V_MAX": 5.0
-    # }
-    # controller = ScheduledPIDController(model, data, scheduled_PID_params)
-
-    # SMC_controller_params = {
-    #     "x_d": X_D, "y_d": Y_D,
-    #     "c_pos": 2.0, "c_theta": 2.0,
-    #     "k_pos": 5.0, "k_theta": 3.0,
-    #     "epsilon": 0.01, "wheelbase": 0.6, "V_MAX": 5.0
-    # }
-    # controller = SlidingModeController(SMC_controller_params)   
-
+    acc_controller_params = {
+        "K_p": 3.0, "K_i": 0.0001, "K_d": 0.3,
+        "wheelbase": 0.6, "T_MAX": 10, "T_MIN": -10
+    }
+    acc_controller = AccelerationPID(acc_controller_params)
     start_time = time.time()
     last_log_time = -np.inf
     last_ctrl_time = -np.inf
@@ -92,32 +82,52 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
         traj_y.append(state["position"][1])
         traj_theta.append(state["orientation"])
 
+        if current_target < len(target_positions):
+            X_D = target_positions[current_target][0]
+            Y_D = target_positions[current_target][1]
 
-        # Send a new control signal every interval
-        if current_time - last_ctrl_time >= control_update_interval:
-            # Compute controls
-            controls = controller.compute_controls(state, control_update_interval)
-            
-            # Apply controls to actuators
-            data.ctrl[left_actuator_id] = controls["left_wheel"]
-            data.ctrl[right_actuator_id] = controls["right_wheel"]
-            last_ctrl_time = current_time
-
-        # Log every second
-        if current_time - last_log_time >= 1.0:
             pos_x = state['position'][0]
             pos_y = state['position'][1]
             pos_t = math.degrees(state["orientation"])
             err_x = X_D - pos_x
             err_y = Y_D - pos_y
             theta_d = math.degrees(math.atan2(err_y, err_x))
-            ctrl_l = controls["left_wheel"]
-            ctrl_r = controls["right_wheel"]
-            logging.info(f"Time: {current_time:.2f}, " \
-                         f"Position: ({pos_x:.2f}, {pos_y:.2f}, {pos_t:.2f}), " \
-                         f"Controls: Left: {ctrl_l:.2f}, Right: {ctrl_r:.2f}, " \
-                         f"Desired Theta: {theta_d:.2f}")
-            last_log_time = current_time
+            ctrl_l = 0.0
+            ctrl_r = 0.0
+            # Send a new control signal every interval
+            if current_time - last_ctrl_time >= control_update_interval:
+                # Compute controls
+                # Unpack velocity control commands
+                velocity_controls = vel_controller.compute_controls(state, X_D, Y_D, control_update_interval)
+                desired_velocity = (velocity_controls["left_wheel"], velocity_controls["right_wheel"])
+                # Actural v and w from state
+                qvel_start_index = model.body_dofadr[body_id]
+                linear_velocity = data.qvel[qvel_start_index : qvel_start_index + 3]
+                angular_velocity = data.qvel[qvel_start_index + 3:qvel_start_index +  6]
+                actural_velocity = (linear_velocity, angular_velocity)
+                torque_controls = acc_controller.compute_controls(desired_velocity, actural_velocity, control_update_interval)
+                # Apply controls to actuators
+                # data.ctrl[left_actuator_id] = controls["left_wheel"]
+                # data.ctrl[right_actuator_id] = controls["right_wheel"]
+                data.ctrl[left_actuator_id] = torque_controls["tau_left"]
+                data.ctrl[right_actuator_id] = torque_controls["tau_right"]
+                last_ctrl_time = current_time
+
+            # Log every second
+            if current_time - last_log_time >= 1.0:
+                logging.info(f"Time: {current_time:.2f}, " \
+                            f"Position: ({pos_x:.2f}, {pos_y:.2f}, {pos_t:.2f}), " \
+                            f"Velocity Commands: ({desired_velocity[0]:.2f}, {desired_velocity[1]:.2f})"
+                            f"Controls: Left: {torque_controls["tau_left"]:.2f}, Right: {torque_controls["tau_right"]:.2f}, " \
+                            f"Desired Theta: {theta_d:.2f}. Target Index: {current_target}")
+                last_log_time = current_time
+
+            if np.hypot(err_x, err_y) < 0.1:
+                logging.info("Moving on to next target.")
+                current_target += 1
+
+        if current_target >= len(target_positions):
+            logging.info("Tracing complete.")
 
         # Step simulation
         mujoco.mj_step(model, data)
