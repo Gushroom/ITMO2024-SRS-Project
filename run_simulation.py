@@ -5,7 +5,7 @@ import mujoco
 import mujoco.viewer
 import logging
 from estimators import groundtruth_estimator, RK4_estimator
-from controllers import VelocityPID, AccelerationPID
+from controllers import VelocityPID, AccelerationPID, VelocitySlidingMode
 import matplotlib.pyplot as plt
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -54,19 +54,27 @@ def get_state_from_simulation(data):
     return {"position": (x, y), "orientation": theta}
 
 # Desired position
-target_positions = [(5, 5), (5, -5), (-5, -5), (-5, 5), (0, 0)]
+target_positions = [(3, 3), (3, -3), (-3, -3), (-3, 3), (0, 0)]
 current_target = 0
 
 with mujoco.viewer.launch_passive(model, data) as viewer:
     vel_controller_params = {
-        "K_p_pos": 1.0, "K_i_pos": 0.0001, "K_d_pos": 0.3,
-        "K_p_theta": 1.0, "K_i_theta": 0.0001, "K_d_theta": 0.3,
-        "V_MAX": 5.0
+        "K_p_pos": 1.0, "K_i_pos": 0.001, "K_d_pos": 0.5,
+        "K_p_theta": 1.0, "K_i_theta": 0.001, "K_d_theta": 0.5,
+        "V_MAX": 5.0, "wheelbase": 0.6
     }
     vel_controller = VelocityPID(vel_controller_params)
 
+    # vel_controller_params = {
+    #     "K_pos": 1, "K_theta": 3,
+    #     "lambda_pos": 0.03, "lambda_theta": 0.03,
+    #     "epsilon_pos": 1, "epsilon_theta": 1,
+    #     "V_MAX": 5.0, "wheelbase": 0.6
+    #     }
+    # vel_controller = VelocitySlidingMode(vel_controller_params)
+
     acc_controller_params = {
-        "K_p": 3.0, "K_i": 0.0001, "K_d": 0.3,
+        "K_p": 2.0, "K_i": 0.001, "K_d": 0.3,
         "wheelbase": 0.6, "T_MAX": 10, "T_MIN": -10
     }
     acc_controller = AccelerationPID(acc_controller_params)
@@ -117,17 +125,18 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
             if current_time - last_log_time >= 1.0:
                 logging.info(f"Time: {current_time:.2f}, " \
                             f"Position: ({pos_x:.2f}, {pos_y:.2f}, {pos_t:.2f}), " \
-                            f"Velocity Commands: ({desired_velocity[0]:.2f}, {desired_velocity[1]:.2f})"
+                            f"Velocity Commands: ({desired_velocity[0]:.2f}, {desired_velocity[1]:.2f}), "
                             f"Controls: Left: {torque_controls["tau_left"]:.2f}, Right: {torque_controls["tau_right"]:.2f}, " \
                             f"Desired Theta: {theta_d:.2f}. Target Index: {current_target}")
                 last_log_time = current_time
 
-            if np.hypot(err_x, err_y) < 0.1:
+            if np.hypot(err_x, err_y) < 0.25:
                 logging.info("Moving on to next target.")
                 current_target += 1
 
         if current_target >= len(target_positions):
             logging.info("Tracing complete.")
+            break
 
         # Step simulation
         mujoco.mj_step(model, data)
