@@ -71,20 +71,20 @@ target_positions = [(3, 3), (3, -3), (-3, -3), (-3, 3), (0, 0)]
 current_target = 0
 
 with mujoco.viewer.launch_passive(model, data) as viewer:
-    vel_controller_params = {
-        "K_p_pos": 1.0, "K_i_pos": 0.001, "K_d_pos": 0.5,
-        "K_p_theta": 1.0, "K_i_theta": 0.001, "K_d_theta": 0.5,
-        "V_MAX": 5.0, "wheelbase": 0.6
-    }
-    vel_controller = VelocityPID(vel_controller_params)
-
     # vel_controller_params = {
-    #     "K_pos": 1, "K_theta": 3,
-    #     "lambda_pos": 0.03, "lambda_theta": 0.03,
-    #     "epsilon_pos": 1, "epsilon_theta": 1,
+    #     "K_p_pos": 1.0, "K_i_pos": 0.001, "K_d_pos": 0.5,
+    #     "K_p_theta": 1.0, "K_i_theta": 0.001, "K_d_theta": 0.5,
     #     "V_MAX": 5.0, "wheelbase": 0.6
-    #     }
-    # vel_controller = VelocitySlidingMode(vel_controller_params)
+    # }
+    # vel_controller = VelocityPID(vel_controller_params)
+
+    vel_controller_params = {
+        "K_pos": 1.5, "K_theta": 1.5,
+        "lambda_pos": 0.5, "lambda_theta": 0.5,
+        "epsilon_pos": 1, "epsilon_theta": 1,
+        "V_MAX": 5.0, "wheelbase": 0.6
+        }
+    vel_controller = VelocitySlidingMode(vel_controller_params)
 
     acc_controller_params = {
         "K_p": 2.0, "K_i": 0.001, "K_d": 0.3,
@@ -169,14 +169,3 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
         elapsed_time = time.time() - start_time
         if elapsed_time < data.time:
             time.sleep(data.time - elapsed_time)
-
-
-plt.figure()
-plt.plot(traj_x, traj_y, label="Trajectory", marker="o")  # Line with markers
-plt.title("Robot Trajectory")
-plt.xlabel("X Position (m)")
-plt.ylabel("Y Position (m)")
-plt.legend()
-plt.grid(True)
-plt.axis("equal")  # Equal scaling for x and y axes
-plt.show()

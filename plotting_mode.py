@@ -70,20 +70,20 @@ def get_state_from_estimator(tau_r, tau_l, gyro, acc):
 target_positions = [(3, 3), (3, -3), (-3, -3), (-3, 3), (0, 0)]
 current_target = 0
 
-vel_controller_params = {
-    "K_p_pos": 1.0, "K_i_pos": 0.001, "K_d_pos": 0.5,
-    "K_p_theta": 1.0, "K_i_theta": 0.001, "K_d_theta": 0.5,
-    "V_MAX": 5.0, "wheelbase": 0.6
-}
-vel_controller = VelocityPID(vel_controller_params)
-
 # vel_controller_params = {
-#     "K_pos": 0.3, "K_theta": 2,
-#     "lambda_pos": 0.03, "lambda_theta": 0.03,
-#     "epsilon_pos": 1, "epsilon_theta": 1,
+#     "K_p_pos": 1.0, "K_i_pos": 0.001, "K_d_pos": 0.5,
+#     "K_p_theta": 1.0, "K_i_theta": 0.001, "K_d_theta": 0.5,
 #     "V_MAX": 5.0, "wheelbase": 0.6
-#     }
-# vel_controller = VelocitySlidingMode(vel_controller_params)
+# }
+# vel_controller = VelocityPID(vel_controller_params)
+
+vel_controller_params = {
+    "K_pos": 1.5, "K_theta": 1.5,
+    "lambda_pos": 0.5, "lambda_theta": 0.5,
+    "epsilon_pos": 1, "epsilon_theta": 1,
+    "V_MAX": 5.0, "wheelbase": 0.6
+    }
+vel_controller = VelocitySlidingMode(vel_controller_params)
 
 acc_controller_params = {
     "K_p": 2.0, "K_i": 0.001, "K_d": 0.3,
@@ -143,9 +143,9 @@ while True:
             data.ctrl[left_actuator_id] = torque_controls["tau_left"]
             data.ctrl[right_actuator_id] = torque_controls["tau_right"]
 
-            get_state_from_estimator(torque_controls["tau_right"],
-                                     torque_controls["tau_left"],
-                                     gyro_data, accel_data)
+            # get_state_from_estimator(torque_controls["tau_right"],
+            #                          torque_controls["tau_left"],
+            #                          gyro_data, accel_data)
             last_ctrl_time = current_time
 
         if current_time - last_log_time >= 1.0:
