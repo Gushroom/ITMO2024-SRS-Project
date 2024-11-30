@@ -1,6 +1,12 @@
 import numpy as np
 import logging
 
+
+def angleSubtraction(angle_a, angle_b):
+    diff = angle_a - angle_b
+    diff = (diff + np.pi) % (2 * np.pi) - np.pi
+    return diff
+
 class VelocityPID():
     def __init__(self, params):
         self.params = params
@@ -21,11 +27,6 @@ class VelocityPID():
         K_d_pos = self.params["K_d_pos"]
         base = self.params["wheelbase"]
         V_MAX = self.params["V_MAX"]
-
-        def angleSubtraction(angle_a, angle_b):
-            diff = angle_a - angle_b
-            diff = (diff + np.pi) % (2 * np.pi) - np.pi
-            return diff
 
         # Compute desired heading and position error
         theta = (theta + np.pi) % (2 * np.pi) - np.pi
@@ -149,11 +150,6 @@ class VelocitySlidingMode():
         epsilon_pos = self.params["epsilon_pos"]
         epsilon_theta = self.params["epsilon_theta"]
 
-        def angleSubtraction(angle_a, angle_b):
-            diff = angle_a - angle_b
-            diff = (diff + np.pi) % (2 * np.pi) - np.pi
-            return diff
-
         # Normalize angles
         theta = (theta + np.pi) % (2 * np.pi) - np.pi
         theta_d = np.arctan2(y_d - y, x_d - x)
@@ -174,11 +170,14 @@ class VelocitySlidingMode():
         self.e_y_prev = error_y
         self.e_theta_prev = error_theta
 
-        K_pos = K_pos_base * max(0, np.cos(error_theta))
+        # K_pos = K_pos_base * max(0, np.cos(error_theta))
 
         # Control laws with smoothing to avoid chattering
-        v = K_pos * np.tanh((s_x * np.cos(theta) + s_y * np.sin(theta)) / epsilon_pos)
-        w = K_theta * np.tanh(s_theta / epsilon_theta)
+        alpha, beta = 0.1, 0.1
+        v = K_pos_base * np.tanh((s_x * np.cos(theta) + s_y * np.sin(theta)) / epsilon_pos) + alpha * np.sign(s_x * np.cos(theta) + s_y * np.sin(theta))
+        w = K_theta * np.tanh(s_theta / epsilon_theta) + beta * np.sign(s_theta)
+
+        # w = K_theta * np.tanh(s_theta / epsilon_theta)
 
         # Compute wheel velocities
         v_l = v - w * (base / 2.0)
