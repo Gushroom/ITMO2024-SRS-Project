@@ -156,7 +156,24 @@ class KalmanFilter:
     def get_state(self):
         """Return the current state (position and orientation)."""
         return self.state
+    
 
+def IMU_vel_estimator(gyro, acc, prev_v, dt):
+    a = acc[0]
+    v = a * dt + prev_v
+    w = gyro[2]
+    return (v, w)
+
+def motion_model(v, w, state, dt):
+    x, y = state["position"]
+    theta = state["orientation"]
+    if w == 0.0:
+        w = 1e-30
+    theta_new = theta + w * dt
+    x_new = x + (-v/w) * np.sin(theta) + (v/w) * np.sin(theta_new)
+    y_new = y + (v/w) * np.cos(theta) - (v/w) * np.cos(theta_new)
+
+    return {"position": (x_new, y_new), "orientation": theta_new}
 
 
         

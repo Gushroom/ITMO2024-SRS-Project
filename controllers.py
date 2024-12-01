@@ -159,7 +159,7 @@ class VelocitySlidingMode():
         base = self.params["wheelbase"]
 
         # Sliding mode control parameters
-        K_pos_base = self.params["K_pos"]
+        K_pos = self.params["K_pos"]
         K_theta = self.params["K_theta"]
         lambda_pos = self.params["lambda_pos"]
         lambda_theta = self.params["lambda_theta"]
@@ -186,11 +186,9 @@ class VelocitySlidingMode():
         self.e_y_prev = error_y
         self.e_theta_prev = error_theta
 
-        # K_pos = K_pos_base * max(0, np.cos(error_theta))
-
         # Control laws with smoothing to avoid chattering
         alpha, beta = 0.1, 0.3
-        v = K_pos_base * np.tanh((s_x * np.cos(theta) + s_y * np.sin(theta)) / epsilon_pos) + alpha * np.sign(s_x * np.cos(theta) + s_y * np.sin(theta))
+        v = K_pos * np.tanh((s_x * np.cos(theta) + s_y * np.sin(theta)) / epsilon_pos) + alpha * np.sign(s_x * np.cos(theta) + s_y * np.sin(theta))
         w = K_theta * np.tanh(s_theta / epsilon_theta) + beta * np.sign(s_theta)
 
         # w = K_theta * np.tanh(s_theta / epsilon_theta)
