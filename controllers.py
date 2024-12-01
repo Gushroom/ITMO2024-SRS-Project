@@ -84,20 +84,25 @@ class AccelerationPID():
         self.err_vr_prev = 0
         self.integral_err_vl = 0
         self.integral_err_vr = 0
+        self.derivative_err_vl_prev = 0
+        self.derivative_err_vr_prev = 0
 
     def compute_controls(self, desired_velocity, actural_velocity, dt):
         K_p = self.params["K_p"]
         K_i = self.params["K_i"]
         K_d = self.params["K_d"]
-        T_MAX = self.params["T_MAX"]  # max control limit (30)
-        T_MIN = self.params["T_MIN"]  # min control limit (-30)
-        base = self.params["wheelbase"]
+        T_MAX = self.params["T_MAX"]  # max control limit (10)
+        T_MIN = self.params["T_MIN"]  # min control limit (-10)
+        r = self.params["wheelradius"]
 
-        # Unpack velocities and calculate actural v_l and v_r using v, w, base
-        actural_linear = actural_velocity[0][0]
-        actural_angular = actural_velocity[1][0]
-        actural_vl = actural_linear - (base/2.0) * actural_angular
-        actural_vr = actural_linear + (base/2.0) * actural_angular
+        # # Unpack velocities and calculate actural v_l and v_r using v, w, base
+        # actural_linear = actural_velocity[0]
+        # actural_angular = actural_velocity[1]
+        # actural_vl = actural_linear - (base/2.0) * actural_angular
+        # actural_vr = actural_linear + (base/2.0) * actural_angular
+        omega_left, omega_right = actural_velocity
+        actural_vl = omega_left * r
+        actural_vr = omega_right * r
 
         desired_vl = desired_velocity[0]
         desired_vr = desired_velocity[1]
@@ -106,12 +111,23 @@ class AccelerationPID():
         err_left = desired_vl - actural_vl
         err_right = desired_vr - actural_vr
         # Update integral of errors
+        MAX_INTEGRAL = 10.0
         self.integral_err_vl += err_left * dt
         self.integral_err_vr += err_right * dt
+        # Anti-windup
+        self.integral_err_vl = max(-MAX_INTEGRAL, min(MAX_INTEGRAL, self.integral_err_vl))
+        self.integral_err_vr = max(-MAX_INTEGRAL, min(MAX_INTEGRAL, self.integral_err_vr))
 
         # Compute derivative of errors
         derivative_err_vl = (err_left - self.err_vl_prev) / dt
         derivative_err_vr = (err_right - self.err_vr_prev) / dt
+        # Low pass filter to smooth D term
+        ALPHA = 0.1 
+        derivative_err_vl = ALPHA * derivative_err_vl + (1 - ALPHA) * self.derivative_err_vl_prev
+        derivative_err_vr = ALPHA * derivative_err_vr + (1 - ALPHA) * self.derivative_err_vr_prev
+        self.derivative_err_vl_prev = derivative_err_vl
+        self.derivative_err_vr_prev = derivative_err_vr
+
 
         # PID control laws for left and right wheel torques
         tau_l = K_p * err_left + K_i * self.integral_err_vl + K_d * derivative_err_vl
@@ -173,7 +189,7 @@ class VelocitySlidingMode():
         # K_pos = K_pos_base * max(0, np.cos(error_theta))
 
         # Control laws with smoothing to avoid chattering
-        alpha, beta = 0.1, 0.1
+        alpha, beta = 0.1, 0.3
         v = K_pos_base * np.tanh((s_x * np.cos(theta) + s_y * np.sin(theta)) / epsilon_pos) + alpha * np.sign(s_x * np.cos(theta) + s_y * np.sin(theta))
         w = K_theta * np.tanh(s_theta / epsilon_theta) + beta * np.sign(s_theta)
 

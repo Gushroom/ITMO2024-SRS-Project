@@ -26,6 +26,8 @@ imu_gyro_sensor_adr = model.sensor_adr[imu_gyro_sensor_id]
 imu_acc_sensor_adr = model.sensor_adr[imu_acc_sensor_id]
 
 body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, 'base_body')
+left_wheel_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, 'left_wheel')
+right_wheel_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, 'right_wheel')
 
 
 # Initialize control inputs
@@ -48,16 +50,12 @@ def get_state_from_simulation(data):
     theta = get_yaw_from_quaternion(quat)
     return {"position": (x, y), "orientation": theta}
 
+kf = KalmanFilter(r=0.2, L=0.6, I_wheel=0.04, I_body=0.4167, m_robot=16.0)
 def get_state_from_estimator(tau_r, tau_l, gyro, acc):
     dt = 0.1
-    r = 0.2
-    b = 0.6
-    kf = KalmanFilter()
-    Q = np.eye(5) * 0.1 
-    R = np.eye(5) * 0.01  
-    kf.set_noise_matrices(Q, R)
+
     # Predict
-    kf.predict(tau_r, tau_l, dt, r, b)
+    kf.predict(tau_r, tau_l, dt)
 
     # Update
     kf.update(gyro, acc, dt)
@@ -71,24 +69,24 @@ target_positions = [(3, 3), (3, -3), (-3, -3), (-3, 3), (0, 0)]
 current_target = 0
 
 with mujoco.viewer.launch_passive(model, data) as viewer:
-    # vel_controller_params = {
-    #     "K_p_pos": 1.0, "K_i_pos": 0.001, "K_d_pos": 0.5,
-    #     "K_p_theta": 1.0, "K_i_theta": 0.001, "K_d_theta": 0.5,
-    #     "V_MAX": 5.0, "wheelbase": 0.6
-    # }
-    # vel_controller = VelocityPID(vel_controller_params)
-
     vel_controller_params = {
-        "K_pos": 1.5, "K_theta": 1.5,
-        "lambda_pos": 0.5, "lambda_theta": 0.5,
-        "epsilon_pos": 1, "epsilon_theta": 1,
+        "K_p_pos": 1.0, "K_i_pos": 0.001, "K_d_pos": 0.3,
+        "K_p_theta": 1.0, "K_i_theta": 0.001, "K_d_theta": 0.3,
         "V_MAX": 5.0, "wheelbase": 0.6
-        }
-    vel_controller = VelocitySlidingMode(vel_controller_params)
+    }
+    vel_controller = VelocityPID(vel_controller_params)
+
+    # vel_controller_params = {
+    #     "K_pos": 1.5, "K_theta": 1.5,
+    #     "lambda_pos": 0.5, "lambda_theta": 0.5,
+    #     "epsilon_pos": 1.0, "epsilon_theta": 0.3,
+    #     "V_MAX": 5.0, "wheelbase": 0.6
+    #     }
+    # vel_controller = VelocitySlidingMode(vel_controller_params)
 
     acc_controller_params = {
-        "K_p": 2.0, "K_i": 0.001, "K_d": 0.3,
-        "wheelbase": 0.6, "T_MAX": 10, "T_MIN": -10
+        "K_p": 5.0, "K_i": 0.001, "K_d": 0.1,
+        "wheelradius": 0.2, "T_MAX": 10, "T_MIN": -10
     }
     acc_controller = AccelerationPID(acc_controller_params)
     start_time = time.time()
@@ -99,17 +97,19 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
         current_time = time.time() - start_time
         dt = model.opt.timestep
         state = get_state_from_simulation(data)
-        traj_x.append(state["position"][0])
-        traj_y.append(state["position"][1])
-        traj_theta.append(state["orientation"])
+        x, y = state["position"]
+        theta = state["orientation"]
+        traj_x.append(x)
+        traj_y.append(y)
+        traj_theta.append(theta)
 
         if current_target < len(target_positions):
             X_D = target_positions[current_target][0]
             Y_D = target_positions[current_target][1]
 
-            pos_x = state['position'][0]
-            pos_y = state['position'][1]
-            pos_t = math.degrees(state["orientation"])
+            pos_x = x
+            pos_y = y
+            pos_t = math.degrees(theta)
             err_x = X_D - pos_x
             err_y = Y_D - pos_y
             theta_d = math.degrees(math.atan2(err_y, err_x))
@@ -123,15 +123,23 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
                 desired_velocity = (velocity_controls["left_wheel"], velocity_controls["right_wheel"])
                 # Actural v and w from state
                 qvel_start_index = model.body_dofadr[body_id]
-                linear_velocity = data.qvel[qvel_start_index : qvel_start_index + 3]
-                angular_velocity = data.qvel[qvel_start_index + 3:qvel_start_index +  6]
+                linear_velocity_vec = data.qvel[qvel_start_index : qvel_start_index + 3]
+                v_x, v_y, v_z = linear_velocity_vec
+                linear_velocity = v_x * np.cos(theta) + v_y * np.sin(theta)
+                angular_velocity = data.qvel[qvel_start_index + 3:qvel_start_index + 6][2]
                 accel_data = data.sensordata[imu_acc_sensor_adr:imu_acc_sensor_adr + 3]  
                 gyro_data = data.sensordata[imu_gyro_sensor_adr:imu_gyro_sensor_adr + 3]
                 v_linear.append(linear_velocity)
                 v_angular.append(angular_velocity)
+                # Get the indices into data.qvel for the wheel joints
+                omega_left_idx = model.jnt_dofadr[left_wheel_id]
+                omega_right_idx = model.jnt_dofadr[right_wheel_id]
+                omega_left = data.qvel[omega_left_idx]
+                omega_right = data.qvel[omega_right_idx]
                 traj_x.append(pos_x)
                 traj_y.append(pos_y)
-                actural_velocity = (linear_velocity, angular_velocity)
+                # actural_velocity = (linear_velocity, angular_velocity)
+                actural_velocity = (omega_left, omega_right)
                 torque_controls = acc_controller.compute_controls(desired_velocity, actural_velocity, control_update_interval)
                 # Apply controls to actuators
                 # data.ctrl[left_actuator_id] = controls["left_wheel"]
@@ -139,9 +147,9 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
                 data.ctrl[left_actuator_id] = torque_controls["tau_left"]
                 data.ctrl[right_actuator_id] = torque_controls["tau_right"]
 
-                get_state_from_estimator(torque_controls["tau_right"],
-                                         torque_controls["tau_left"],
-                                         gyro_data, accel_data)
+                # get_state_from_estimator(torque_controls["tau_right"],
+                #                          torque_controls["tau_left"],
+                #                          gyro_data, accel_data)
                 last_ctrl_time = current_time
 
             # Log every second
