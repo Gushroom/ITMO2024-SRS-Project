@@ -1,6 +1,4 @@
 import numpy as np
-import logging
-
 
 def angleSubtraction(angle_a, angle_b):
     diff = angle_a - angle_b

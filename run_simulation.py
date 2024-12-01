@@ -65,6 +65,17 @@ while theta < 2 * math.pi:
     theta += step
 current_target = 0
 
+v_true_values = []
+v_est_values = []
+w_true_values = []
+w_est_values = []
+x_true_values = []
+x_est_values = []
+y_true_values = []
+y_est_values = []
+theta_true_values = []
+theta_est_values = []
+
 with mujoco.viewer.launch_passive(model, data) as viewer:
     vel_controller_params = {
         "K_p_pos": 1.0, "K_i_pos": 0.001, "K_d_pos": 0.3,
@@ -100,6 +111,9 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
     while viewer.is_running():
         current_time = time.time() - start_time
         dt = model.opt.timestep
+        true_state = get_state_from_simulation(data)
+        x_true, y_true = true_state["position"]
+        theta_true = true_state["orientation"]
 
         if current_target < len(target_positions):
             X_D = target_positions[current_target][0]
@@ -111,12 +125,20 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
 
                 v, w = IMU_vel_estimator(acc=accel_data, gyro=gyro_data, prev_v=prev_v, dt=control_update_interval)
                 prev_v = v
+                v_est_values.append(v)
+                w_est_values.append(w)
 
                 state = motion_model(v, w, prev_state, control_update_interval)
                 prev_state = state
 
                 x, y = state["position"]
                 theta = state["orientation"]
+                x_est_values.append(x)
+                y_est_values.append(y)
+                theta_est_values.append(theta)
+                x_true_values.append(x_true)
+                y_true_values.append(y_true)
+                theta_true_values.append(theta_true)
 
                 err_x = X_D - x
                 err_y = Y_D - y
@@ -131,6 +153,8 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
                 # [v, w]
                 linear_velocity = v_x * np.cos(theta) + v_y * np.sin(theta)
                 angular_velocity = data.qvel[qvel_start_index + 3:qvel_start_index + 6][2]
+                v_true_values.append(linear_velocity)
+                w_true_values.append(angular_velocity)
 
                 # Get the indices into data.qvel for the wheel joints
                 omega_left_idx = model.jnt_dofadr[left_wheel_id]
@@ -144,8 +168,8 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
                 actual_velocity = (omega_left, omega_right)
                 torque_controls = acc_controller.compute_controls(desired_velocity, actual_velocity, control_update_interval)
 
-                data.ctrl[left_actuator_id] = torque_controls["tau_left"]
-                data.ctrl[right_actuator_id] = torque_controls["tau_right"]
+                # data.ctrl[left_actuator_id] = torque_controls["tau_left"]
+                # data.ctrl[right_actuator_id] = torque_controls["tau_right"]
 
                 # state_estimation = get_state_from_kalman(torque_controls["tau_right"],
                 #                          torque_controls["tau_left"],
@@ -177,3 +201,55 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
         elapsed_time = time.time() - start_time
         if elapsed_time < data.time:
             time.sleep(data.time - elapsed_time)
+
+
+plt.figure()
+plt.plot(v_true_values)
+plt.plot(v_est_values)
+plt.ylabel("velocity (m/s)")
+plt.xlabel("time (s)")
+plt.title("Linear velocity value")
+plt.grid(True)
+plt.legend(["true_value","estimated"])
+plt.show()
+
+
+plt.figure()
+plt.plot(w_true_values)
+plt.plot(w_est_values)
+plt.ylabel("angular velocity (rad/s)")
+plt.xlabel("time (s)")
+plt.title("angular value value")
+plt.grid(True)
+plt.legend(["true_value","estiamted"])
+plt.show()
+
+plt.figure()
+plt.plot(x_true_values)
+plt.plot(x_est_values)
+plt.ylabel("Distance (m)")
+plt.xlabel("time (s)")
+plt.title("X value")
+plt.grid(True)
+plt.legend(["true_value","estimated"])
+plt.show()
+
+plt.figure()
+plt.plot(y_true_values)
+plt.plot(y_est_values)
+plt.ylabel("Distance (m)")
+plt.xlabel("time (s)")
+plt.title("y value")
+plt.grid(True)
+plt.legend(["true_value","estiamted"])
+plt.show()
+
+plt.figure()
+plt.plot(theta_true_values)
+plt.plot(theta_est_values)
+plt.ylabel("angle (rad)")
+plt.xlabel("time (s)")
+plt.title("theta value")
+plt.grid(True)
+plt.legend(["true_value","estiamted"])
+plt.show()
