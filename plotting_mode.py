@@ -69,23 +69,24 @@ def get_state_from_rk4(omega_left, omega_right, dt):
 
 
 # Desired position
-target_positions = [(3, 3), (3, -3), (-3, -3), (-3, 3), (0, 0)]
+# target_positions = [(3, 3), (3, -3), (-3, -3), (-3, 3), (0, 0)]
+target_positions = [(-3, -3), (0, 0)]
 current_target = 0
 
-# vel_controller_params = {
-#     "K_p_pos": 1.0, "K_i_pos": 0.001, "K_d_pos": 0.3,
-#     "K_p_theta": 1.0, "K_i_theta": 0.001, "K_d_theta": 0.3,
-#     "V_MAX": 5.0, "wheelbase": 0.6
-# }
-# vel_controller = VelocityPID(vel_controller_params)
-
 vel_controller_params = {
-    "K_pos": 1.5, "K_theta": 1.5,
-    "lambda_pos": 0.5, "lambda_theta": 0.5,
-    "epsilon_pos": 1.0, "epsilon_theta": 0.3,
+    "K_p_pos": 1.0, "K_i_pos": 0.001, "K_d_pos": 0.3,
+    "K_p_theta": 1.0, "K_i_theta": 0.001, "K_d_theta": 0.3,
     "V_MAX": 5.0, "wheelbase": 0.6
-    }
-vel_controller = VelocitySlidingMode(vel_controller_params)
+}
+vel_controller = VelocityPID(vel_controller_params)
+
+# vel_controller_params = {
+#     "K_pos": 1.5, "K_theta": 1.5,
+#     "lambda_pos": 0.5, "lambda_theta": 0.5,
+#     "epsilon_pos": 1.0, "epsilon_theta": 0.3,
+#     "V_MAX": 5.0, "wheelbase": 0.6
+#     }
+# vel_controller = VelocitySlidingMode(vel_controller_params)
 
 acc_controller_params = {
     "K_p": 5.0, "K_i": 0.001, "K_d": 0.1,
@@ -104,8 +105,10 @@ traj_y = []
 est_x = []
 est_y = []
 traj_theta = []
-v_linear = []
-v_angular = []
+v_actural = []
+w_actural = []
+v_estimation = []
+w_estimation = []
 
 # Main simulation loop
 while True:
@@ -144,17 +147,19 @@ while True:
             angular_velocity = data.qvel[qvel_start_index + 3:qvel_start_index + 6][2]
             accel_data = data.sensordata[imu_acc_sensor_adr:imu_acc_sensor_adr + 3]
             gyro_data = data.sensordata[imu_gyro_sensor_adr:imu_gyro_sensor_adr + 3]
-            v_linear.append(linear_velocity)
-            v_angular.append(angular_velocity)
+            v_actural.append(linear_velocity)
+            w_actural.append(angular_velocity)
             # Get the indices into data.qvel for the wheel joints
             omega_left_idx = model.jnt_dofadr[left_wheel_id]
             omega_right_idx = model.jnt_dofadr[right_wheel_id]
             omega_left = data.qvel[omega_left_idx]
             omega_right = data.qvel[omega_right_idx]
-            # print(f"Omega left: {omega_left} Omega right: {omega_right}")
+            print(f"Omega left: {omega_left} Omega right: {omega_right}")
             # Compute linear and angular velocities from wheel speeds
             v_est = (0.2 / 2) * (omega_left + omega_right)
             omega_est = (0.2 / 0.6) * (omega_right - omega_left)
+            v_estimation.append(v_est)
+            w_estimation.append(omega_est)
 
             # Adjust the estimated linear velocity to account for robot's heading
             # Integrate over time to update robot's orientation (theta)
@@ -225,3 +230,25 @@ plt.ylabel('Estimated Y position')
 plt.title('Estimated Vehicle Trajectory')
 plt.legend()
 plt.show()
+
+
+plt.figure()
+plt.plot(v_actural, label='v_actual')
+plt.plot(v_estimation, label='v_estimation')
+plt.title('Linear Velocity Comparison')
+plt.xlabel('Timestep')
+plt.ylabel('Linear Velocity (m/s)')
+plt.legend()
+plt.grid()
+plt.show()
+
+plt.figure()
+plt.plot(w_actural, label='w_actual')
+plt.plot(w_estimation, label='w_estimation')
+plt.title('Angular Velocity Comparison')
+plt.xlabel('Timestep')
+plt.ylabel('Angular Velocity (rad/s)')
+plt.legend()
+plt.grid()
+plt.show()
+
