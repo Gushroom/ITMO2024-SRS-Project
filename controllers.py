@@ -34,7 +34,7 @@ class VelocityPID():
         error_pos = np.hypot(y_d - y, x_d - x)
 
         # Scale linear velocity based on angular error
-        k = 10  # Steepness
+        k = 5  # Steepness
         theta_threshold = np.pi / 4  # Threshold (45 deg)
         K_p_pos = K_p_pos_base / (1 + np.exp(k * (abs(error_theta) - theta_threshold))) # Reduce linear gain as error_theta increases
 
@@ -44,8 +44,11 @@ class VelocityPID():
 
         # Compute control efforts
         # Update integral and derivative terms
+        MAX_INTEGRAL = 10.0
         self.integral_e_pos += error_pos * dt
         self.integral_e_theta += error_theta * dt
+        self.integral_e_pos = max(-MAX_INTEGRAL, min(MAX_INTEGRAL, self.integral_e_pos))
+        self.integral_e_theta = max(-MAX_INTEGRAL, min(MAX_INTEGRAL, self.integral_e_theta))
         derivative_e_pos = (error_pos - self.e_pos_prev) / dt
         derivative_e_theta = (error_theta - self.e_theta_prev) / dt
 

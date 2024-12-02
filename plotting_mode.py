@@ -4,7 +4,7 @@ import numpy as np
 import mujoco
 import mujoco.viewer
 import logging
-from estimators import groundtruth_estimator, motion_model, IMU_vel_estimator
+from estimators import groundtruth_estimator, motion_model, IMU_vel_estimator, RealTimeKalmanFilter
 from controllers import VelocityPID, AccelerationPID, VelocitySlidingMode
 import matplotlib.pyplot as plt
 import csv
@@ -54,13 +54,6 @@ def get_state_from_simulation(data):
 
 # Desired position
 target_positions = [(3, 3), (3, -3), (-3, -3), (-3, 3), (0, 0)]
-# target_positions = [(-3, -3), (0, 0)]
-# target_positions = [(-5, -5), (-5, -3), (-5, -1), (-5, 1), (-5, 3), (-5, 5),
-#  (-3, -5), (-3, -3), (-3, -1), (-3, 1), (-3, 3), (-3, 5),
-#  (-1, -5), (-1, -3), (-1, -1), (-1, 1), (-1, 3), (-1, 5),
-#  (0, -4), (0, 4), (1, -5), (1, -3), (1, -1), (1, 1), (1, 3), (1, 5),
-#  (2, -3), (-2, 3), (3, -3), (-3, 3), (4, 0), 
-#  (3, 3), (3, -3), (-3, -3), (-3, 3), (0, 0)]
 current_target = 0
 
 vel_controller_params = {
@@ -79,7 +72,7 @@ vel_controller = VelocityPID(vel_controller_params)
 # vel_controller = VelocitySlidingMode(vel_controller_params)
 
 acc_controller_params = {
-    "K_p": 5.0, "K_i": 0.001, "K_d": 0.1,
+    "K_p": 3.0, "K_i": 0.001, "K_d": 0.1,
     "wheelradius": 0.2, "T_MAX": 10, "T_MIN": -10
 }
 acc_controller = AccelerationPID(acc_controller_params)
@@ -92,8 +85,9 @@ control_update_interval = 0.1
 current_target = 0
 traj_x = []
 traj_y = []
-est_x = []
-est_y = []
+x_estimation = []
+y_estimation = []
+theta_estimation = []
 traj_theta = []
 v_actual = []
 w_actual = []
@@ -109,31 +103,34 @@ theta_d = 0
 ctrl_l = 0.0
 ctrl_r = 0.0
 prev_v = 0.0
+kf_left = RealTimeKalmanFilter(process_variance=0.01, measurement_variance=0.1)
+kf_right = RealTimeKalmanFilter(process_variance=0.01, measurement_variance=0.1)
 # Main simulation loop
 while True:
-    current_time = time.time() - start_time
+    current_time = data.time
     dt = model.opt.timestep
-    # state = get_state_from_simulation(data)
+    state = get_state_from_simulation(data)
+    x, y = state["position"]
+    theta = state["orientation"]
+
+    traj_x.append(x)
+    traj_y.append(y)
+    traj_theta.append(theta)
 
     if current_target < len(target_positions):
         X_D = target_positions[current_target][0]
         Y_D = target_positions[current_target][1]
+        err_x = X_D - x
+        err_y = Y_D - y
+        theta_d = np.atan2(err_x, err_y)
+        err_theta = np.degrees(theta_d - theta)
 
         if current_time - last_ctrl_time >= control_update_interval:
             accel_data = data.sensordata[imu_acc_sensor_adr:imu_acc_sensor_adr + 3]
             gyro_data = data.sensordata[imu_gyro_sensor_adr:imu_gyro_sensor_adr + 3]
 
-            v, w = IMU_vel_estimator(acc=accel_data, gyro=gyro_data, prev_v=prev_v, dt=control_update_interval)
-            prev_v = v
-
-            state = motion_model(v, w, prev_state, control_update_interval)
-            prev_state = state
-
-            x, y = state["position"]
-            theta = state["orientation"]
-
-            err_x = X_D - x
-            err_y = Y_D - y
+            _, w_est = IMU_vel_estimator(acc=accel_data, gyro=gyro_data, prev_v=prev_v, dt=control_update_interval)
+            w_estimation.append(w_est)
 
             velocity_controls = vel_controller.compute_controls(state, X_D, Y_D, control_update_interval)
             desired_velocity = (velocity_controls["left_wheel"], velocity_controls["right_wheel"])
@@ -155,9 +152,20 @@ while True:
             omega_right = data.qvel[omega_right_idx]
             omega_left_actual.append(omega_left)
             omega_right_actual.append(omega_right)
-
+            # Estimate linear v
+            omega_left_filtered = kf_left.update(omega_left)
+            omega_right_filtered = kf_right.update(omega_right)
+            v_est = (0.2 / 2) * (omega_left_filtered + omega_right_filtered)
+            # v_est = (0.2 / 2) * (omega_left + omega_right)
+            v_estimation.append(v_est)
             # print(f"Actual Linear: {linear_velocity} \nEstimated linear: {v_est}")
-
+            state_est = motion_model(v_est, w_est, prev_state, control_update_interval)
+            prev_state = state_est
+            x_est, y_est = state_est["position"]
+            theta_est = state_est["orientation"]
+            x_estimation.append(x_est)
+            y_estimation.append(y_est)
+            theta_estimation.append(theta_est)
             # actual_velocity = (linear_velocity, angular_velocity)
             actual_velocity = (omega_left, omega_right)
             torque_controls = acc_controller.compute_controls(desired_velocity, actual_velocity, control_update_interval)
@@ -175,10 +183,10 @@ while True:
                         f"Position: ({x:.2f}, {y:.2f}, {theta:.2f}), " \
                         f"Velocity Commands: ({desired_velocity[0]:.2f}, {desired_velocity[1]:.2f}), " \
                         f"Controls: Left: {torque_controls['tau_left']:.2f}, Right: {torque_controls['tau_right']:.2f}, " \
-                        f"Desired Theta: {theta_d:.2f}. Target Index: {current_target}")
+                        f"Desired Theta: {theta_d:.2f}. Target: {target_positions[current_target]}")
             last_log_time = current_time
 
-        if np.hypot(err_x, err_y) < 0.5:
+        if np.hypot(err_x, err_y) < 0.25:
             logging.info("Moving on to next target.")
             current_target += 1
 
@@ -210,7 +218,7 @@ plt.show()
 
 
 plt.figure()
-plt.plot(est_x, est_y, label='Trajectory')
+plt.plot(x_estimation, y_estimation, label='Trajectory')
 plt.scatter([pos[0] for pos in target_positions], [pos[1] for pos in target_positions], color='red', label='Targets')
 plt.xlabel('Estimated X position')
 plt.ylabel('Estimated Y position')
@@ -239,9 +247,9 @@ plt.legend()
 plt.grid()
 plt.show()
 
-output_file = "velocity.csv"
-with open(output_file, "w", newline='') as file:
-    writer = csv.writer(file)
-    writer.writerow(["omega_left", "omega_right", "linear", "angular"])
-    for i in range(len(v_actual)):
-        writer.writerow([omega_left_actual[i], omega_right_actual[i], v_actual[i], w_actual[i]])
+# output_file = "velocity.csv"
+# with open(output_file, "w", newline='') as file:
+#     writer = csv.writer(file)
+#     writer.writerow(["omega_left", "omega_right", "linear", "angular"])
+#     for i in range(len(v_actual)):
+#         writer.writerow([omega_left_actual[i], omega_right_actual[i], v_actual[i], w_actual[i]])

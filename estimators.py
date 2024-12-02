@@ -176,4 +176,36 @@ def motion_model(v, w, state, dt):
     return {"position": (x_new, y_new), "orientation": theta_new}
 
 
+class RealTimeKalmanFilter:
+    def __init__(self, process_variance, measurement_variance, initial_estimate=0, initial_error=1):
+        """
+        Initialize the Kalman filter.
+        :param process_variance: Variance of the process noise (how much the system changes on its own).
+        :param measurement_variance: Variance of the measurement noise (sensor noise).
+        :param initial_estimate: Initial estimate of the state.
+        :param initial_error: Initial estimation error.
+        """
+        self.process_variance = process_variance  # Q
+        self.measurement_variance = measurement_variance  # R
+        self.estimate = initial_estimate  # x
+        self.error = initial_error  # P
+        self.kalman_gain = 0  # K
+
+    def update(self, measurement):
+        """
+        Update the Kalman filter with a new measurement.
+        :param measurement: The new measurement (z).
+        :return: The updated estimate.
+        """
+        # Prediction step
+        self.error += self.process_variance
+
+        # Update step
+        self.kalman_gain = self.error / (self.error + self.measurement_variance)
+        self.estimate += self.kalman_gain * (measurement - self.estimate)
+        self.error = (1 - self.kalman_gain) * self.error
+
+        return self.estimate
+
+
         
