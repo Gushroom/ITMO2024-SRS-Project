@@ -11,8 +11,8 @@ import matplotlib.pyplot as plt
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 
 # Load the MuJoCo model
-# model_path = 'models/robot.xml' 
-model_path = 'test_robot.xml' 
+model_path = 'models/robot.xml' 
+# model_path = 'test_robot.xml' 
 model = mujoco.MjModel.from_xml_path(model_path)
 data = mujoco.MjData(model)
 

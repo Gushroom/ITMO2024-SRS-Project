@@ -12,8 +12,8 @@ import csv
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 
 # Load the MuJoCo model
-# model_path = 'models/robot.xml' 
-model_path = 'test_robot.xml' 
+model_path = 'models/robot.xml' 
+# model_path = 'test_robot.xml' 
 model = mujoco.MjModel.from_xml_path(model_path)
 data = mujoco.MjData(model)
 
@@ -56,20 +56,20 @@ def get_state_from_simulation(data):
 target_positions = [(3, 3), (3, -3), (-3, -3), (-3, 3), (0, 0)]
 current_target = 0
 
-vel_controller_params = {
-    "K_p_pos": 1.0, "K_i_pos": 0.001, "K_d_pos": 0.3,
-    "K_p_theta": 1.0, "K_i_theta": 0.001, "K_d_theta": 0.3,
-    "V_MAX": 5.0, "wheelbase": 0.6
-}
-vel_controller = VelocityPID(vel_controller_params)
-
 # vel_controller_params = {
-#     "K_pos": 1.5, "K_theta": 1.5,
-#     "lambda_pos": 0.5, "lambda_theta": 0.5,
-#     "epsilon_pos": 1.0, "epsilon_theta": 0.3,
+#     "K_p_pos": 1.0, "K_i_pos": 0.001, "K_d_pos": 0.3,
+#     "K_p_theta": 1.0, "K_i_theta": 0.001, "K_d_theta": 0.3,
 #     "V_MAX": 5.0, "wheelbase": 0.6
-#     }
-# vel_controller = VelocitySlidingMode(vel_controller_params)
+# }
+# vel_controller = VelocityPID(vel_controller_params)
+
+vel_controller_params = {
+    "K_pos": 1.5, "K_theta": 1.5,
+    "lambda_pos": 0.5, "lambda_theta": 0.5,
+    "epsilon_pos": 1.0, "epsilon_theta": 0.3,
+    "V_MAX": 5.0, "wheelbase": 0.6
+    }
+vel_controller = VelocitySlidingMode(vel_controller_params)
 
 acc_controller_params = {
     "K_p": 3.0, "K_i": 0.001, "K_d": 0.1,
@@ -105,6 +105,7 @@ ctrl_r = 0.0
 prev_v = 0.0
 kf_left = RealTimeKalmanFilter(process_variance=0.01, measurement_variance=0.1)
 kf_right = RealTimeKalmanFilter(process_variance=0.01, measurement_variance=0.1)
+kf_imu = RealTimeKalmanFilter(process_variance=0.1, measurement_variance=0.1)
 # Main simulation loop
 while True:
     current_time = data.time
@@ -130,7 +131,8 @@ while True:
             gyro_data = data.sensordata[imu_gyro_sensor_adr:imu_gyro_sensor_adr + 3]
 
             _, w_est = IMU_vel_estimator(acc=accel_data, gyro=gyro_data, prev_v=prev_v, dt=control_update_interval)
-            w_estimation.append(w_est)
+            w_filtered = kf_imu.update(w_est)
+            w_estimation.append(w_filtered)
 
             velocity_controls = vel_controller.compute_controls(state, X_D, Y_D, control_update_interval)
             desired_velocity = (velocity_controls["left_wheel"], velocity_controls["right_wheel"])
@@ -194,6 +196,8 @@ while True:
             logging.info("Stopping simulation, tracing failed.")
             break
 
+
+
     else:
         logging.info("Tracing complete.")
         break
@@ -206,6 +210,11 @@ while True:
     if elapsed_time < data.time:
         time.sleep(data.time - elapsed_time)
 
+length = 0
+for i in range(1, len(traj_x)):
+    length += np.hypot(traj_x[i]-traj_x[i-1], traj_y[i]-traj_y[i-1])
+
+print(length)
 
 plt.figure()
 plt.plot(traj_x, traj_y, label='Trajectory')
@@ -224,6 +233,18 @@ plt.xlabel('Estimated X position')
 plt.ylabel('Estimated Y position')
 plt.title('Estimated Vehicle Trajectory')
 plt.legend()
+plt.show()
+
+
+plt.figure()
+plt.plot(traj_x, traj_y, label='Actual Trajectory')
+plt.plot(x_estimation, y_estimation, label='Estimated Trajectory')
+plt.scatter([pos[0] for pos in target_positions], [pos[1] for pos in target_positions], color='red', marker='o', label='Targets')
+plt.xlabel('X Position')
+plt.ylabel('Y Position')
+plt.title('Actual Trajectory and Estimated Trajectory')
+plt.legend()
+plt.grid(True)
 plt.show()
 
 
